@@ -1,6 +1,6 @@
 # xiaoheihe-fav-organizer
 
-[![赞赏](https://img.shields.io/badge/%E8%B5%9E%E8%B5%8F-%E7%88%B1%E5%8F%91%E7%94%B5-ff69b4)](https://afdian.com/a/mervin1944) [![微信赞赏](https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1-%E8%B5%9E%E8%B5%8F-07C160?logo=wechat&logoColor=white)](assets/wechat-reward.png)
+[![赞赏 · 爱发电](https://img.shields.io/badge/%E8%B5%9E%E8%B5%8F-%E7%88%B1%E5%8F%91%E7%94%B5-ff69b4)](https://afdian.com/a/mervin1944) [![赞赏 · 微信](https://img.shields.io/badge/%E8%B5%9E%E8%B5%8F-%E5%BE%AE%E4%BF%A1-07C160?logo=wechat&logoColor=white)](assets/wechat-reward.png) [![赞赏 · 支付宝](https://img.shields.io/badge/%E8%B5%9E%E8%B5%8F-%E6%94%AF%E4%BB%98%E5%AE%9D-1677FF?logo=alipay&logoColor=white)](assets/alipay-reward.png)
 
 > 把小黑盒（HeyBox）堆满的「默认收藏夹」按分类自动归入「收藏夹」的命令行工具。
 
@@ -281,16 +281,9 @@ skill 不硬编码脚本路径：它会依次尝试环境变量 `XHH_FAV_DIR`、
 
 如果这个工具帮到了你，可以扫码请我喝杯咖啡 ☕
 
-<details>
-<summary>展开微信 / 支付宝赞赏码</summary>
-
-<br>
-
 | 微信 | 支付宝 |
 | :---: | :---: |
 | <img src="assets/wechat-reward.png" alt="微信赞赏码" width="220"> | <img src="assets/alipay-reward.png" alt="支付宝赞赏码" width="220"> |
-
-</details>
 
 ## 免责声明
 
