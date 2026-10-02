@@ -277,6 +277,21 @@ xcopy /E /I skill "$env:USERPROFILE\.dsh\skills\xiaoheihe-fav"
 skill 不硬编码脚本路径：它会依次尝试环境变量 `XHH_FAV_DIR`、`glob` 搜 `**/xhh.mjs`、
 最后问用户。因此同一个文件在本地和仓库里完全一致 —— 但**更新脚本后请重新复制一次** `skill/`。
 
+## 赞赏
+
+如果这个工具帮到了你，可以扫码请我喝杯咖啡 ☕
+
+<details>
+<summary>展开微信 / 支付宝赞赏码</summary>
+
+<br>
+
+| 微信 | 支付宝 |
+| :---: | :---: |
+| <img src="assets/wechat-reward.png" alt="微信赞赏码" width="220"> | <img src="assets/alipay-reward.png" alt="支付宝赞赏码" width="220"> |
+
+</details>
+
 ## 免责声明
 
 本项目仅供学习与个人数据管理使用。它调用的是未公开的内部接口，**可能随时失效**，
