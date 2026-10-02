@@ -64,11 +64,16 @@ cp cookie.txt.example cookie.txt   # Windows: copy cookie.txt.example cookie.txt
 ```bash
 node xhh.mjs check                                   # 验证 cookie 并列出收藏夹
 node xhh.mjs fetch                                   # 拉取全部收藏（可中断续跑）
+node xhh.mjs scan                                    # 扫描已有收藏夹（重要，见下）
 node xhh.mjs plan                                    # 生成归类方案（只读，不动账号）
 node xhh.mjs apply --only 碧蓝档案 --limit 20 --yes   # 先小批量试跑
 node xhh.mjs status                                  # 查看进度
 node xhh.mjs apply --yes                             # 全量执行
 ```
+
+> **`scan` 不要跳过。** 「全部收藏」列表里其实混着一些**已经在收藏夹里**的条目，
+> 不先扫描就会把用户已经整理好的内容从原夹里拽出来。
+> `scan` 生成快照后，`plan` 会把这些条目排除；`apply` 每次执行前也会自动重扫一遍。
 
 **先试跑再全量**。`--limit 20` 只移 20 条，去 App 里确认效果无误后再跑全量。
 `apply` 不带 `--yes` 是预演，不会改动账号。
@@ -80,11 +85,13 @@ node xhh.mjs apply --yes                             # 全量执行
 | `check` | 验证 cookie，列出收藏夹 |
 | `folders` | 列出收藏夹及条数 |
 | `fetch` | 分页拉取全部收藏 → `data/favourites.json`（可中断续跑） |
+| `scan` | 扫描已有收藏夹内容 → `data/foldered.json`（`plan` 依赖它做保护） |
 | `stats` | 统计内容类型、话题分布 |
 | `plan` | 生成归类方案 → `data/plan.json` / `plan.md` / `plan.csv`（只读） |
 | `apply` | 建夹 + 移动，默认预演 |
 | `status` | 各收藏夹的进度条 |
 | `undo` | 撤销，把条目移回原本所在的收藏夹 |
+| `move` | 手动移动单条，用于纠正个别误判 |
 | `cleanup` | 删除本工具创建的、当前为空的收藏夹 |
 
 常用参数：
@@ -93,7 +100,9 @@ node xhh.mjs apply --yes                             # 全量执行
 node xhh.mjs apply --yes --throttle 800       # 放慢到 800ms，更不容易被限流
 node xhh.mjs apply --only 游戏推荐 --yes       # 只跑某一个夹
 node xhh.mjs apply --limit 50 --yes           # 只跑 50 条
+node xhh.mjs apply --yes --no-scan            # 跳过安全检查（不建议）
 node xhh.mjs undo --only 绘画同人 --yes        # 只撤销某个夹
+node xhh.mjs move --link 123456 --to 壁纸 --yes # 手动把某条移到指定夹
 node xhh.mjs fetch --restart                  # 丢弃已有数据重新拉取
 ```
 
@@ -165,8 +174,18 @@ hkey  = 前缀 + 后缀
 所有请求还需要一组固定的 web 端通用参数（`os_type=web`、`app=heybox`、`client_type=web` 等），
 见 `xhhlib.mjs` 的 `COMMON`。
 
+两个补充细节：
+
+- 列某个夹内容时，服务端**硬性每页最多 30 条**，`limit` 传 100/200 都只返回 30，
+  必须用 `offset` 翻页；返回体里的 `result.folder.count` 是总数，可作为终止依据。
+- 列全部收藏（`v2/links`）没有总数，且 `has_next` 不会变成 `"0"`，见下方「坑」一节。
+
 ## 已知限制与坑
 
+- **「全部收藏」列表里混着已归档的条目**。这是最容易踩的坑：列表并非只含默认夹里的内容，
+  有些条目其实已经在某个收藏夹里了。直接按列表移动会把用户已经整理好的内容**从原夹里拽出来**。
+  所以务必先 `scan`，让 `plan` 排除它们；`apply` 也会在执行前重扫一遍，
+  并对这类条目跳过（记为「跳过:原在 X」）。
 - **写接口的参数必须放在 POST 表单体里**。放 query string 会被静默忽略，
   报「请输入收藏夹名」/「要移动的帖子不存在」这类误导性错误。
 - **一次只能移一条**。重复传 `link_id` 参数只会生效第一个，没有可用的批量接口。

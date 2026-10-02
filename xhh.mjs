@@ -34,6 +34,7 @@ const PLAN_FILE = path.join(DATA, 'plan.json');
 const PLAN_MD = path.join(DATA, 'plan.md');
 const STATE_FILE = path.join(DATA, 'apply-state.json');
 const UNDO_FILE = path.join(DATA, 'undo.json');
+const FOLDERED_FILE = path.join(DATA, 'foldered.json');
 const RULES_FILE = path.join(ROOT, 'rules.json');
 
 const FOLDER_NAME_MAX = 16; // 实测：16 字符可接受，20 被拒
@@ -124,6 +125,35 @@ const classify = (l, rules) => {
 
 /** 可归类的条目：有效且非空 */
 const usable = (it) => it.link && Number(it.is_deleted) !== 1 && it.link.title && it.link.linkid;
+
+/**
+ * 扫描所有已存在的收藏夹，返回 { linkid: {name, id} }。
+ * 「全部收藏」列表里其实混着一些已经在收藏夹里的条目，
+ * 不先摸清就会把它们从用户已经整理好的夹里拽出来。
+ */
+async function scanFoldered(verbose = true) {
+  const folders = (await cli.folders()).filter((f) => !f.is_default);
+  const map = {};
+  for (const f of folders) {
+    if (verbose) process.stdout.write(`\r  扫描「${f.name}」...                    `);
+    try {
+      const links = await cli.folderLinksAll(f.id);
+      for (const l of links) if (l.linkid) map[l.linkid] = { name: f.name, id: f.id };
+      if (verbose) process.stdout.write(`\r  「${f.name}」读到 ${links.length}/${f.count} 条\n`);
+    } catch (e) {
+      if (verbose) process.stdout.write(`\r  ⚠ 「${f.name}」读取失败：${e.message}\n`);
+    }
+  }
+  return map;
+}
+
+async function cmdScan() {
+  console.log('扫描已有收藏夹内容 ...');
+  const map = await scanFoldered(true);
+  writeJson(FOLDERED_FILE, { scanned_at: new Date().toISOString(), count: Object.keys(map).length, map });
+  console.log(`\n✓ ${Object.keys(map).length} 条收藏已在收藏夹中 -> ${FOLDERED_FILE}`);
+  console.log('  下次 plan 会用这份快照排除掉它们');
+}
 
 // ------------------------------------------------------------------ 命令
 
@@ -251,15 +281,26 @@ function cmdPlan() {
   const csv = ['folder,keyword,linkid,title'];
   const csvCell = (v) => `"${String(v ?? '').replace(/"/g, '""').slice(0, 80)}"`;
 
+  // 已有收藏夹快照：这些条目用户已经整理过了，绝不能再动
+  const snap = readJson(FOLDERED_FILE, null);
+  const foldered = snap?.map || null;
+  const alreadyFoldered = [];
+
   for (const it of d.items) {
     if (!usable(it)) continue;
+    const id = it.link.linkid;
+    if (foldered && foldered[id]) {
+      alreadyFoldered.push({ linkid: id, title: it.link.title, folder: foldered[id].name });
+      csv.push([csvCell('(已在收藏夹)'), csvCell(foldered[id].name), id, csvCell(it.link.title)].join(','));
+      continue;
+    }
     const hit = classify(it.link, rules);
     if (hit) {
-      buckets.get(hit.rule.folder).push({ linkid: it.link.linkid, title: it.link.title, type: it.link.link_type });
-      csv.push([csvCell(hit.rule.folder), csvCell(hit.kw), it.link.linkid, csvCell(it.link.title)].join(','));
+      buckets.get(hit.rule.folder).push({ linkid: id, title: it.link.title, type: it.link.link_type });
+      csv.push([csvCell(hit.rule.folder), csvCell(hit.kw), id, csvCell(it.link.title)].join(','));
     } else {
-      unassigned.push({ linkid: it.link.linkid, title: it.link.title });
-      csv.push([csvCell('(未归类)'), csvCell(''), it.link.linkid, csvCell(it.link.title)].join(','));
+      unassigned.push({ linkid: id, title: it.link.title });
+      csv.push([csvCell('(未归类)'), csvCell(''), id, csvCell(it.link.title)].join(','));
     }
   }
   fs.writeFileSync(path.join(DATA, 'plan.csv'), '\ufeff' + csv.join('\n'));
@@ -274,6 +315,8 @@ function cmdPlan() {
     total: d.items.length,
     usable: d.items.filter(usable).length,
     skipped: d.items.length - d.items.filter(usable).length,
+    already_foldered: alreadyFoldered.length,
+    foldered_snapshot: snap?.scanned_at || null,
     folders,
     unassigned_count: unassigned.length,
     unassigned_sample: unassigned.slice(0, 15),
@@ -285,6 +328,7 @@ function cmdPlan() {
     ``,
     `- 生成时间：${plan.created_at}`,
     `- 收藏总数：${plan.total}（可归类 ${plan.usable}，跳过失效/空条目 ${plan.skipped}）`,
+    `- 已在收藏夹中、不再改动：${plan.already_foldered}${plan.foldered_snapshot ? '' : '（未扫描，建议先运行 node xhh.mjs scan）'}`,
     `- 将归入 ${folders.length} 个收藏夹，共 ${folders.reduce((a, f) => a + f.count, 0)} 条`,
     `- 未归类（留在默认收藏夹）：${plan.unassigned_count}`,
     ``,
@@ -298,7 +342,10 @@ function cmdPlan() {
   ];
   fs.writeFileSync(PLAN_MD, lines.join('\n'));
 
-  console.log(`可归类 ${plan.usable} 条，跳过 ${plan.skipped} 条，未归类 ${plan.unassigned_count} 条\n`);
+  console.log(`可归类 ${plan.usable} 条，跳过失效/空 ${plan.skipped} 条，未归类 ${plan.unassigned_count} 条`);
+  if (snap) console.log(`已在收藏夹中（本次不动）：${alreadyFoldered.length} 条  [快照 ${snap.scanned_at}]`);
+  else console.log(`⚠ 还没扫描过已有收藏夹，建议先跑 node xhh.mjs scan，否则可能把已归档的条目拽出来`);
+  console.log('');
   for (const f of folders) {
     console.log(`  ${String(f.count).padStart(6)}  ${f.folder.padEnd(6)}  ${f.sample.slice(0, 2).map((s) => String(s.title).slice(0, 26)).join(' | ')}`);
   }
@@ -372,6 +419,18 @@ async function cmdApply() {
   state.started_at ||= new Date().toISOString();
   const undo = readJson(UNDO_FILE, []);
 
+  // 关键安全检查：先摸清哪些条目已经在收藏夹里
+  // 「全部收藏」列表里混着这类条目，直接移会把用户已整理好的内容拽出来
+  let foldered = {};
+  if (!has('no-scan')) {
+    console.log('\n扫描已有收藏夹（避免把已归档的内容拽出来）...');
+    foldered = await scanFoldered(true);
+    console.log(`  ${Object.keys(foldered).length} 条已在收藏夹中\n`);
+  } else {
+    console.log('\n⚠ 已用 --no-scan 跳过安全检查，已在收藏夹中的条目可能被移走\n');
+  }
+  let skippedFoldered = 0;
+
   let movedThisRun = 0;
   for (const f of targets) {
     // 确保收藏夹存在
@@ -392,11 +451,25 @@ async function cmdApply() {
     let i = 0;
     for (const linkid of todo) {
       if (limit && movedThisRun >= limit) break;
+
+      // 已在别的收藏夹里 -> 尊重用户原有的整理，跳过
+      const already = foldered[linkid];
+      if (already && already.id !== targetId) {
+        state.moved[linkid] = `${f.folder} (跳过:原在「${already.name}」)`;
+        skippedFoldered++;
+        continue;
+      }
+      // 已经在目标夹里 -> 视为已完成，不重复请求
+      if (already && already.id === targetId) {
+        state.moved[linkid] = f.folder;
+        continue;
+      }
+
       const r = await moveWithRetry(targetId, linkid, ctl);
 
       if (r.ok) {
         state.moved[linkid] = f.folder;
-        undo.push({ linkid, folder: f.folder, folder_id: targetId, from: 0, at: new Date().toISOString() });
+        undo.push({ linkid, folder: f.folder, folder_id: targetId, from: already?.id ?? 0, at: new Date().toISOString() });
         movedThisRun++;
         i++;
       } else if (r.capacity) {
@@ -435,6 +508,7 @@ async function cmdApply() {
   writeJson(STATE_FILE, state);
   writeJson(UNDO_FILE, undo);
   console.log(`\n✓ 本次移动 ${movedThisRun} 条；累计 ${Object.keys(state.moved).length} 条；失败 ${state.failures.length} 条`);
+  if (skippedFoldered) console.log(`  跳过 ${skippedFoldered} 条：它们本来就在别的收藏夹里，已保持原样`);
   console.log(`  撤销记录：${UNDO_FILE}`);
 }
 
@@ -500,6 +574,23 @@ async function cmdUndo() {
   console.log(`✓ 撤销完成：成功 ${ok}，失败 ${fail}；undo.json 剩余 ${undo.length - okIds.size} 条`);
 }
 
+/** 手动把单条收藏移动到指定收藏夹，用于纠正个别误判 */
+async function cmdMove() {
+  const link = arg('link');
+  const to = arg('to');
+  if (!link || !to) die('用法：node xhh.mjs move --link <linkid> --to <收藏夹名> [--yes]');
+  const folders = await cli.folders();
+  const f = folders.find((x) => x.name === to);
+  if (!f) die(`没有名为「${to}」的收藏夹。现有：${folders.map((x) => x.name).join('、')}`);
+  console.log(`把 ${link} 移动到「${f.name}」(id=${f.id})`);
+  if (!has('yes')) {
+    console.log('（预演模式，加 --yes 才会执行）');
+    return;
+  }
+  await cli.moveLink(f.id, Number(link));
+  console.log('✓ 完成');
+}
+
 /** 删除本工具创建的、当前为空的收藏夹 */
 async function cmdCleanup() {
   const exec = has('yes');
@@ -527,12 +618,14 @@ async function cmdCleanup() {
 const commands = {
   check: cmdCheck,
   folders: cmdFolders,
+  scan: cmdScan,
   fetch: cmdFetch,
   stats: cmdStats,
   plan: cmdPlan,
   apply: cmdApply,
   status: cmdStatus,
   undo: cmdUndo,
+  move: cmdMove,
   cleanup: cmdCleanup,
 };
 
@@ -544,12 +637,14 @@ if (!cmd || !commands[cmd]) {
       '',
       '  node xhh.mjs check                            验证 cookie',
       '  node xhh.mjs folders                          列出收藏夹',
+      '  node xhh.mjs scan                             扫描已有收藏夹（plan 前建议先跑）',
       '  node xhh.mjs fetch                            拉取全部收藏（可续跑）',
       '  node xhh.mjs stats                            统计字段分布',
       '  node xhh.mjs plan                             生成归类方案（只读）',
       '  node xhh.mjs apply [--only 名称] [--limit N] --yes   执行建夹与移动',
       '  node xhh.mjs status                           查看进度',
       '  node xhh.mjs undo --yes                       撤销还原',
+      '  node xhh.mjs move --link <id> --to <夹名> --yes  手动移动单条（纠正误判）',
       '  node xhh.mjs cleanup --yes                    删除本工具建的空收藏夹',
     ].join('\n')
   );

@@ -204,10 +204,29 @@ export class XhhClient {
     return out;
   }
 
-  /** 某个收藏夹内的条目 */
-  async folderLinks(folderId, limit = 100) {
+  /** 某个收藏夹内的一页条目（服务端硬性每页最多 30 条，传更大的 limit 无效） */
+  async folderLinks(folderId, limit = 30) {
     const r = await this.ok('/bbs/app/profile/fav/folder/links', { folder_id: folderId, offset: 0, limit });
     return (r.links || []).map((x) => x.link).filter(Boolean);
+  }
+
+  /** 某个收藏夹内的全部条目，靠 result.folder.count 判断终点并翻页 */
+  async folderLinksAll(folderId, onPage) {
+    const out = [];
+    let offset = 0;
+    for (;;) {
+      const r = await this.ok('/bbs/app/profile/fav/folder/links', { folder_id: folderId, offset, limit: 30 });
+      const batch = (r.links || []).map((x) => x.link).filter(Boolean);
+      out.push(...batch);
+      const total = Number(r.folder?.count ?? 0);
+      if (onPage) onPage(out.length, total);
+      if (batch.length === 0) break;
+      if (total && out.length >= total) break;
+      offset += 30;
+      await sleep(300);
+      if (out.length > 100000) break;
+    }
+    return out;
   }
 
   // ------------------------------------------------------------ 写
