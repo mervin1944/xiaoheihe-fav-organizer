@@ -18,6 +18,7 @@
 - [分类规则](#分类规则)
 - [接口逆向要点](#接口逆向要点)
 - [已知限制与坑](#已知限制与坑)
+- [作为 Agent Skill 使用](#作为-agent-skill-使用)
 - [免责声明](#免责声明)
 
 ---
@@ -199,6 +200,31 @@ hkey  = 前缀 + 后缀
 - **默认收藏夹（`folder_id=0`）满了之后**，往里移动会报「目标收藏夹容量不够」。
   所以撤销时如果默认夹已满，需要先移出足够的条数腾出空间。
 - **失效条目**：已被删除的收藏会以 `is_deleted=1`、空标题、`link_type=0` 返回，脚本会自动跳过。
+
+## 作为 Agent Skill 使用
+
+`skill/SKILL.md` 是一份 Agent Skill 描述文件。它**不替代脚本** —— 脚本是引擎，skill 是操作纪律：
+把「必须先 `scan` 再 `plan`」「`apply` 默认预演」「执行前必须让用户审方案」
+「限流与耗时预期」这些约束固化下来，让 agent 每次都不会绕过去。
+
+安装到用户级 skill 目录（对所有项目生效）：
+
+```bash
+# macOS / Linux
+mkdir -p ~/.dsh/skills
+cp -r skill ~/.dsh/skills/xiaoheihe-fav
+```
+
+```powershell
+# Windows
+xcopy /E /I skill "$env:USERPROFILE\.dsh\skills\xiaoheihe-fav"
+```
+
+装好后 skill 目录会被监听，**无需重启**即可进入会话目录。之后直接说
+「帮我把小黑盒收藏整理一下」就能触发。
+
+skill 不硬编码脚本路径：它会依次尝试环境变量 `XHH_FAV_DIR`、`glob` 搜 `**/xhh.mjs`、
+最后问用户。因此同一个文件在本地和仓库里完全一致 —— 但**更新脚本后请重新复制一次** `skill/`。
 
 ## 免责声明
 
