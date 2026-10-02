@@ -1,0 +1,10 @@
+在这里粘贴完整 Cookie（整行替换本行，粘贴后保存即可）
+
+获取方法：
+1. Chrome 打开 https://xiaoheihe.cn/app/user/favour/content 并确认已登录
+2. F12 -> Network -> F5 刷新
+3. 筛选 xiaoheihe，点任意一条 api.xiaoheihe.cn 的请求
+4. Request Headers 里找到 Cookie: 一行，复制冒号后的整段值
+5. 粘贴到本文件（整行替换），保存
+
+注意：本文件等同登录凭证，已被 .gitignore 排除，但请勿手动外发。
