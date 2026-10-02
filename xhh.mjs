@@ -360,26 +360,48 @@ function loadState() {
   return readJson(STATE_FILE, { moved: {}, folders: {}, failures: [], started_at: null });
 }
 
-/** 带退避的移动；ctl.throttle 会在被限流后自适应调大 */
+/**
+ * 带退避的移动。
+ *
+ * 降低风控风险的三个手段都集中在这里：
+ *   - 退避时间加抖动，避免固定节奏这种明显的机器人特征
+ *   - 被限流后自适应调大请求间隔
+ *   - 连续被拦超过 ctl.maxBlock 次就整体中止本次运行，而不是继续硬撞
+ *     （继续打只会延长封禁；状态已落盘，晚点重跑即可续上）
+ */
 async function moveWithRetry(folderId, linkId, ctl) {
   for (let attempt = 0; ; attempt++) {
     try {
-      await cli.moveLink(folderId, linkId);
-      return { ok: true };
+      const r = await cli.moveLink(folderId, linkId);
+      ctl.blockStreak = 0; // 成功即清零
+      return { ok: true, r };
     } catch (e) {
       const msg = e.message;
-      if (/403/.test(msg) && attempt < 8) {
-        const wait = Math.min(30000 * 2 ** attempt, 300000);
-        ctl.throttle = Math.min(ctl.throttle + 200, 3000); // 自适应降速
+
+      if (/403/.test(msg)) {
+        ctl.blockStreak = (ctl.blockStreak || 0) + 1;
         ctl.blocks = (ctl.blocks || 0) + 1;
-        console.log(`\n  ⚠ 限流(403)，退避 ${wait / 1000}s，间隔调至 ${ctl.throttle}ms ...`);
+
+        if (ctl.blockStreak > ctl.maxBlock) {
+          return { ok: false, aborted: true, msg };
+        }
+        if (attempt >= 8) return { ok: false, msg };
+
+        const base = Math.min(30000 * 2 ** attempt, 300000);
+        const wait = Math.round(base * (0.8 + Math.random() * 0.4)); // 抖动 ±20%
+        ctl.throttle = Math.min(ctl.throttle + 200, 4000); // 自适应降速
+        console.log(
+          `\n  ⚠ 限流(403) 第 ${ctl.blockStreak}/${ctl.maxBlock} 次，` +
+            `退避 ${(wait / 1000).toFixed(0)}s，间隔调至 ${ctl.throttle}ms ...`
+        );
         await sleep(wait);
         continue;
       }
+
       if (/容量不够/.test(msg)) return { ok: false, msg, capacity: true };
       if (/不存在/.test(msg)) return { ok: false, msg, notFound: true };
       if (attempt < 3) {
-        await sleep(1000 * (attempt + 1));
+        await sleep((1000 * (attempt + 1)) | 0);
         continue;
       }
       return { ok: false, msg };
@@ -394,7 +416,15 @@ async function cmdApply() {
 
   const only = arg('only');
   const limit = Number(arg('limit', 0)) || 0;
-  const ctl = { throttle: Number(arg('throttle', 450)), blocks: 0 };
+  // 保守默认：1 秒起步 + 抖动 + 每 200 条歇 60 秒 + 连续被拦 5 次就收手
+  const ctl = {
+    throttle: Number(arg('throttle', 1000)),
+    pauseEvery: Number(arg('pause-every', 200)),
+    pauseMs: Number(arg('pause-ms', 60000)),
+    maxBlock: Number(arg('max-block', 5)),
+    blocks: 0,
+    blockStreak: 0,
+  };
 
   let targets = plan.folders;
   if (only) {
@@ -468,6 +498,15 @@ async function cmdApply() {
 
       const r = await moveWithRetry(targetId, linkid, ctl);
 
+      if (r.aborted) {
+        writeJson(STATE_FILE, state);
+        writeJson(UNDO_FILE, undo);
+        console.log(`\n⏸ 连续被限流 ${ctl.maxBlock} 次，已主动中止本次运行（继续打只会延长封禁）。`);
+        console.log(`  本次已移 ${movedThisRun} 条，累计 ${Object.keys(state.moved).length} 条，进度已保存。`);
+        console.log(`  建议等 30 分钟以上、或换个网络出口，再重跑同一条命令即可续上。`);
+        process.exit(0);
+      }
+
       if (r.ok) {
         state.moved[linkid] = f.folder;
         undo.push({ linkid, folder: f.folder, folder_id: targetId, from: already?.id ?? 0, at: new Date().toISOString() });
@@ -495,7 +534,17 @@ async function cmdApply() {
       }
       const doneAll = Object.keys(state.moved).length;
       process.stdout.write(`\r  ${f.folder}: ${i}/${todo.length}  累计已移 ${doneAll} 条        `);
-      await sleep(ctl.throttle);
+
+      // 间隔加抖动：固定节奏是很明显的机器人特征
+      await sleep(Math.round(ctl.throttle * (0.6 + Math.random() * 0.8)));
+
+      // 每 N 条歇一会儿，模拟人工分批操作
+      if (ctl.pauseEvery > 0 && movedThisRun > 0 && movedThisRun % ctl.pauseEvery === 0) {
+        console.log(`\n  ⏸ 已连续移动 ${movedThisRun} 条，休息 ${(ctl.pauseMs / 1000).toFixed(0)}s ...`);
+        writeJson(STATE_FILE, state);
+        writeJson(UNDO_FILE, undo);
+        await sleep(ctl.pauseMs);
+      }
     }
     writeJson(STATE_FILE, state);
     writeJson(UNDO_FILE, undo);
@@ -510,6 +559,7 @@ async function cmdApply() {
   writeJson(UNDO_FILE, undo);
   console.log(`\n✓ 本次移动 ${movedThisRun} 条；累计 ${Object.keys(state.moved).length} 条；失败 ${state.failures.length} 条`);
   if (skippedFoldered) console.log(`  跳过 ${skippedFoldered} 条：它们本来就在别的收藏夹里，已保持原样`);
+  if (ctl.blocks) console.log(`  期间被限流 ${ctl.blocks} 次，最终间隔 ${ctl.throttle}ms`);
   console.log(`  撤销记录：${UNDO_FILE}`);
 }
 
@@ -643,6 +693,7 @@ if (!cmd || !commands[cmd]) {
       '  node xhh.mjs stats                            统计字段分布',
       '  node xhh.mjs plan                             生成归类方案（只读）',
       '  node xhh.mjs apply [--only 名称] [--limit N] --yes   执行建夹与移动',
+      '     风控相关：[--throttle 1000] [--pause-every 200] [--pause-ms 60000] [--max-block 5]',
       '  node xhh.mjs status                           查看进度',
       '  node xhh.mjs undo --yes                       撤销还原',
       '  node xhh.mjs move --link <id> --to <夹名> --yes  手动移动单条（纠正误判）',
