@@ -107,7 +107,12 @@ export class XhhClient {
 
   get cookie() {
     if (this._cookie) return this._cookie;
-    if (!fs.existsSync(this.cookieFile)) throw new Error(`未找到 ${this.cookieFile}`);
+    if (!fs.existsSync(this.cookieFile)) {
+      throw new Error(
+        `未找到 ${this.cookieFile}\n` +
+          '  请把 cookie.txt.example 复制为 cookie.txt，再按其中的说明粘贴登录 Cookie。'
+      );
+    }
     const raw = fs
       .readFileSync(this.cookieFile, 'utf8')
       .replace(/^\uFEFF/, '')

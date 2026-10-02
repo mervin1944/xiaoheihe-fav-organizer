@@ -556,4 +556,27 @@ if (!cmd || !commands[cmd]) {
   process.exit(cmd ? 1 : 0);
 }
 
-await commands[cmd]();
+try {
+  await commands[cmd]();
+} catch (e) {
+  const msg = e?.message || String(e);
+  if (/未找到.*cookie\.txt/.test(msg)) {
+    console.error(
+      [
+        '',
+        '✖ 还没有配置 Cookie',
+        '',
+        '  1. 把 cookie.txt.example 复制为 cookie.txt',
+        '       Windows:  copy cookie.txt.example cookie.txt',
+        '       macOS/Linux:  cp cookie.txt.example cookie.txt',
+        '  2. 浏览器打开 https://xiaoheihe.cn/app/user/favour/content 并确认已登录',
+        '  3. F12 -> Network -> F5，筛选 xiaoheihe，点任一 api.xiaoheihe.cn 请求',
+        '  4. Request Headers 里复制 Cookie: 后的整段值，粘贴进 cookie.txt',
+        '',
+      ].join('\n')
+    );
+  } else {
+    console.error(`\n✖ ${msg}\n`);
+  }
+  process.exit(1);
+}
