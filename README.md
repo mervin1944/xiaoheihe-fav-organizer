@@ -1,6 +1,6 @@
 # xiaoheihe-fav-organizer
 
-[![赞赏](https://img.shields.io/badge/%E8%B5%9E%E8%B5%8F-%E7%88%B1%E5%8F%91%E7%94%B5-ff69b4)](https://afdian.com/a/mervin1944)
+[![赞赏](https://img.shields.io/badge/%E8%B5%9E%E8%B5%8F-%E7%88%B1%E5%8F%91%E7%94%B5-ff69b4)](https://afdian.com/a/mervin1944) [![微信赞赏](https://img.shields.io/badge/%E5%BE%AE%E4%BF%A1-%E8%B5%9E%E8%B5%8F-07C160?logo=wechat&logoColor=white)](assets/wechat-reward.png)
 
 > 把小黑盒（HeyBox）堆满的「默认收藏夹」按分类自动归入「收藏夹」的命令行工具。
 
