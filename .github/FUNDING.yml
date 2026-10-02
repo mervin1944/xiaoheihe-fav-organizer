@@ -1,0 +1,7 @@
+# 赞助入口 —— 让 GitHub 在本仓库页面顶部显示 Sponsor 按钮。
+#
+# 说明：账号级的 mervin1944/.github/FUNDING.yml 已经配了同样的链接，
+# 但实测该仓库的 showSponsorButton 仍为 false（账号级默认未驱动按钮）。
+# 先在本仓库放一份本地配置做验证：若能显示，则说明仓库级 custom 有效、
+# 问题出在账号级继承。
+custom: ["https://afdian.com/a/mervin1944"]
