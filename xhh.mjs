@@ -214,7 +214,8 @@ async function cmdFetch() {
     }
     if (r.status !== 'ok') die(`拉取失败：${r.status} / ${r.msg}`);
 
-    const batch = r.links || [];
+    // 注意：cli.request() 返回的是完整响应体，条目在 result.links 里
+    const batch = r.result?.links || [];
     let fresh = 0;
     for (const it of batch) {
       const id = it.link?.linkid;
