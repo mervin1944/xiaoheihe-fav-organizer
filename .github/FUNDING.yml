@@ -1,7 +1,0 @@
-# 赞助入口 —— 让 GitHub 在本仓库页面顶部显示 Sponsor 按钮。
-#
-# 注意域名：实测 custom 填 https://afdian.com/a/mervin1944 时
-# GitHub 的 showSponsorButton 保持 false（不渲染按钮）；
-# 参考成功案例 Rabbit-Spec/Surge 用的是爱发电的镜像域名 ifdian.net。
-# 两个域名指向同一个主页（user_id 相同），此处使用 ifdian.net。
-custom: ["https://ifdian.net/a/mervin1944"]
