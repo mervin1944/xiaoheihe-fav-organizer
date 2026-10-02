@@ -63,11 +63,26 @@ cp cookie.txt.example cookie.txt   # Windows: copy cookie.txt.example cookie.txt
 
 > `cookie.txt` 等同登录凭证，已被 `.gitignore` 排除。泄露等于账号被接管，务必不要外发。
 
-### 2. 跑起来
+### 2. 看清自己的收藏构成
 
 ```bash
-node xhh.mjs check                                   # 验证 cookie 并列出收藏夹
-node xhh.mjs fetch                                   # 拉取全部收藏（可中断续跑）
+node xhh.mjs check      # 验证 cookie 并列出收藏夹
+node xhh.mjs fetch      # 拉取全部收藏（最慢的一步，可中断续跑）
+node xhh.mjs stats      # 打印 Top25 话题 / Top25 标签 —— 写规则前必看
+```
+
+`stats` 会打印出你的收藏里哪些主题/标签最多，例如：
+
+```
+话题 Top25:  盒友杂谈(2023)  碧蓝档案(2022)  Steam(775)  数码硬件(771)  动漫(413) …
+标签 Top25:  蔚蓝档案(1410)  同人绘画(901)   steam游戏(559)  单机游戏(546) …
+```
+
+**拿这份数据决定分类**，而不是直接套用示例规则。见下方[分类规则](#分类规则)。
+
+### 3. 写规则 → 出方案 → 执行
+
+```bash
 node xhh.mjs scan                                    # 扫描已有收藏夹（重要，见下）
 node xhh.mjs plan                                    # 生成归类方案（只读，不动账号）
 node xhh.mjs apply --only 碧蓝档案 --limit 20 --yes   # 先小批量试跑
@@ -78,6 +93,17 @@ node xhh.mjs apply --yes                             # 全量执行
 > **`scan` 不要跳过。** 「全部收藏」列表里其实混着一些**已经在收藏夹里**的条目，
 > 不先扫描就会把用户已经整理好的内容从原夹里拽出来。
 > `scan` 生成快照后，`plan` 会把这些条目排除；`apply` 每次执行前也会自动重扫一遍。
+
+`plan` 跑完会输出一段**规则适配度自检**：
+
+```
+── 规则适配度自检 ──
+  未归类占比  3.3%   （>30% 说明规则没抓住这个用户的主要兴趣）
+  最大夹占比  16.7%  「职场生活」  （>50% 说明分类过粗，建议拆开）
+  ✓ 看起来合理，可以进入人工审阅（看 data/plan.csv）
+```
+
+**超过阈值就说明规则不合适，别往下执行**，回去重新写规则。
 
 **先试跑再全量**。`--limit 20` 只移 20 条，去 App 里确认效果无误后再跑全量。
 `apply` 不带 `--yes` 是预演，不会改动账号。
@@ -90,7 +116,7 @@ node xhh.mjs apply --yes                             # 全量执行
 | `folders` | 列出收藏夹及条数 |
 | `fetch` | 分页拉取全部收藏 → `data/favourites.json`（可中断续跑） |
 | `scan` | 扫描已有收藏夹内容 → `data/foldered.json`（`plan` 依赖它做保护） |
-| `stats` | 统计内容类型、话题分布 |
+| `stats` | 打印收藏构成画像（Top25 话题 / Top25 标签），**写规则前必看** |
 | `plan` | 生成归类方案 → `data/plan.json` / `plan.md` / `plan.csv`（只读） |
 | `apply` | 建夹 + 移动，默认预演 |
 | `status` | 各收藏夹的进度条 |
@@ -115,7 +141,16 @@ node xhh.mjs fetch --restart                   # 丢弃已有数据重新拉取
 
 ## 分类规则
 
-规则在 `rules.json`，**按顺序匹配，先命中先用**，每条收藏只进一个夹。
+**`rules.json` 是你自己的文件，仓库不提供。** 仓库只给一份 `rules.example.json` 作语法参考 ——
+那份是按一个「游戏 + 二次元」偏重的收藏调出来的，**直接套用几乎肯定不适合你**。
+
+正确做法是**先看数据再写规则**：
+
+```bash
+node xhh.mjs stats      # 打印 Top25 话题 / Top25 标签
+```
+
+拿这些真实主题去决定要建哪些夹，然后照下面的格式写 `rules.json`：
 
 ```json
 {
@@ -125,6 +160,17 @@ node xhh.mjs fetch --restart                   # 丢弃已有数据重新拉取
   ]
 }
 ```
+
+只想先跑通看看效果，也可以直接复制示例：
+
+```bash
+cp rules.example.json rules.json     # Windows: copy rules.example.json rules.json
+```
+
+> 如果你是用 agent（如 DSH 的 `xiaoheihe-fav` skill）跑这个工具，
+> skill 会强制它先跑 `stats`、把 Top 话题拿给你确认后再写规则 —— 而不是丢一份示例给你。
+
+规则**按顺序匹配，先命中先用**，每条收藏只进一个夹。
 
 `match` 支持的键：
 
@@ -137,9 +183,11 @@ node xhh.mjs fetch --restart                   # 丢弃已有数据重新拉取
 
 纯英文关键词会**按词边界匹配**，所以 `ai` 不会误命中 `said`、`detail`。
 
-> 仓库自带的 `rules.json` 是一个针对「游戏 + 二次元」内容偏重的收藏夹调出来的示例，
-> 不一定适合你。**务必先 `plan`，然后用 Excel 打开 `data/plan.csv` 扫一眼**——
-> 里面第二列写着每一条命中的是哪个关键词，能直接看出规则是否合理。改完重新 `plan` 即可。
+写完规则后跑 `plan`，**必须看两样东西**：
+
+1. **`plan` 输出的「规则适配度自检」** —— 未归类 >30% 或单个夹 >50% 就是 rule 没写对，回去改
+2. **`data/plan.csv`** —— 第二列写着**每一条命中的是哪个关键词**，用 Excel 打开扫一眼，
+   能直接看出哪个词归类错了
 
 ## 接口逆向要点
 

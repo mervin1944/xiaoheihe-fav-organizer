@@ -76,7 +76,22 @@ const has = (name) => arg(name) !== null;
 // ------------------------------------------------------------------ 规则
 
 function loadRules() {
-  if (!fs.existsSync(RULES_FILE)) die(`未找到 ${RULES_FILE}`);
+  if (!fs.existsSync(RULES_FILE)) {
+    die(
+      [
+        `未找到 ${RULES_FILE}`,
+        '',
+        `  它是**你自己的**分类规则，仓库里不提供 —— 只给了 rules.example.json 作参考。`,
+        '  那个示例是按「游戏 + 二次元」偏重的收藏调的，直接套用多半不适合你。',
+        '',
+        '  推荐做法：先看清自己的收藏构成，再据此写',
+        '      node xhh.mjs stats',
+        '',
+        '  只想先跑通看看效果，可以复制示例：',
+        `      ${process.platform === 'win32' ? 'copy' : 'cp'} rules.example.json rules.json`,
+      ].join('\n')
+    );
+  }
   const j = JSON.parse(fs.readFileSync(RULES_FILE, 'utf8'));
   const rules = (j.folders || []).filter((r) => r && r.folder);
   for (const r of rules) {
@@ -256,20 +271,61 @@ async function cmdFetch() {
   console.log(`✓ 完成：唯一收藏 ${items.length} 条（本次新增 ${added}）-> ${FAV_FILE}`);
 }
 
+/**
+ * 打印该用户收藏的构成画像。
+ *
+ * 目的是**为分类规则的编写提供依据** —— 拿这里的真实数据去问用户想怎么分，
+ * 而不是空问「你想怎么分类」（用户答不上来），也不要直接套用示例规则。
+ */
 function cmdStats() {
   const d = readJson(FAV_FILE);
   if (!d) die(`未找到 ${FAV_FILE}，请先运行 node xhh.mjs fetch`);
-  const links = d.items.map((x) => x.link).filter(Boolean);
-  const tally = (fn) => {
+  const links = d.items.filter(usable).map((x) => x.link);
+  const linksAll = d.items.map((x) => x.link).filter(Boolean);
+
+  const tally = (fn, src = linksAll) => {
     const m = new Map();
-    for (const l of links) m.set(String(fn(l)), (m.get(String(fn(l))) || 0) + 1);
+    for (const l of src) {
+      const k = String(fn(l));
+      m.set(k, (m.get(k) || 0) + 1);
+    }
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   };
-  console.log(`收藏总数 ${d.items.length}，其中 is_deleted=1 的 ${d.deleted} 条，可归类 ${d.items.filter(usable).length} 条\n`);
-  console.log('link_type:', tally((l) => l.link_type).map(([k, v]) => `${k}=${v}`).join('  '));
+  const top = (map, n) =>
+    [...map.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, n)
+      .map(([k, v]) => `${k}(${v})`)
+      .join('  ');
+
+  console.log(`收藏总数 ${d.items.length}，其中 is_deleted=1 的 ${d.deleted} 条，可归类 ${links.length} 条`);
+  console.log('（以下统计只基于「可归类」的条目）\n');
+  console.log('link_type 分布:', tally((l) => l.link_type).map(([k, v]) => `${k}=${v}`).join('  '));
+
   const tf = new Map();
-  for (const l of links) for (const t of l.topics || []) tf.set(t.name, (tf.get(t.name) || 0) + 1);
-  console.log('\n话题 Top20:', [...tf.entries()].sort((a, b) => b[1] - a[1]).slice(0, 20).map(([k, v]) => `${k}(${v})`).join('  '));
+  const hf = new Map();
+  for (const l of links) {
+    for (const t of l.topics || []) tf.set(t.name, (tf.get(t.name) || 0) + 1);
+    for (const h of l.hashtags || []) hf.set(h.name, (hf.get(h.name) || 0) + 1);
+  }
+
+  console.log('\n话题 Top25:');
+  console.log('  ' + top(tf, 25));
+  console.log('\n标签 Top25:');
+  console.log('  ' + top(hf, 25));
+
+  const noTopic = links.filter((l) => !(l.topics || []).length && !(l.hashtags || []).length).length;
+  console.log(`\n既无话题也无标签（难以归类）: ${noTopic} 条`);
+
+  console.log(
+    [
+      '',
+      '── 下一步 ──',
+      '  规则在 rules.json，需要你根据上面这份画像自己写（仓库只提供 rules.example.json 作参考）。',
+      '  把 Top 话题/标签拿给用户看并问他想怎么分，比空问「你想怎么分类」有效得多。',
+      '  写好后：node xhh.mjs scan && node xhh.mjs plan',
+    ].join('\n')
+  );
 }
 
 function cmdPlan() {
@@ -351,7 +407,31 @@ function cmdPlan() {
     console.log(`  ${String(f.count).padStart(6)}  ${f.folder.padEnd(6)}  ${f.sample.slice(0, 2).map((s) => String(s.title).slice(0, 26)).join(' | ')}`);
   }
   console.log(`\n✓ 方案已写入 ${PLAN_FILE} 与 ${PLAN_MD}（未改动账号）`);
-  console.log(`  预览无误后执行：node xhh.mjs apply --only <收藏夹名> --limit 20 --yes`);
+
+  // 适配度自检：让 agent 能自己发现「这套规则不适合这个用户」，而不是等用户抱怨
+  const classified = folders.reduce((a, f) => a + f.count, 0);
+  const base = classified + plan.unassigned_count;
+  const unassignedPct = base ? (plan.unassigned_count / base) * 100 : 0;
+  const biggest = folders[0];
+  const biggestPct = base && biggest ? (biggest.count / base) * 100 : 0;
+
+  console.log('\n── 规则适配度自检 ──');
+  console.log(`  未归类占比  ${unassignedPct.toFixed(1)}%   （>30% 说明规则没抓住这个用户的主要兴趣）`);
+  if (biggest) console.log(`  最大夹占比  ${biggestPct.toFixed(1)}%   「${biggest.folder}」  （>50% 说明分类过粗，建议拆开）`);
+
+  const warns = [];
+  if (unassignedPct > 30) warns.push(`未归类 ${unassignedPct.toFixed(0)}% 偏高`);
+  if (biggestPct > 50) warns.push(`「${biggest.folder}」独占 ${biggestPct.toFixed(0)}%`);
+
+  if (warns.length) {
+    console.log(`\n  ⚠ ${warns.join('；')}`);
+    console.log('    rules.json 多半不适合这个用户。**建议先别执行**，回去问用户想怎么分：');
+    console.log('    把 `node xhh.mjs stats` 里的 Top 话题/标签拿给他看，再据此改规则。');
+  } else {
+    console.log('  ✓ 看起来合理，可以进入人工审阅（看 data/plan.csv）');
+  }
+
+  console.log(`\n  预览无误后执行：node xhh.mjs apply --only <收藏夹名> --limit 20 --yes`);
 }
 
 // ------------------------------------------------------------------ 执行
