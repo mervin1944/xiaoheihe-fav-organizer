@@ -320,9 +320,15 @@ function cmdStats() {
   console.log(
     [
       '',
-      '── 下一步 ──',
-      '  规则在 rules.json，需要你根据上面这份画像自己写（仓库只提供 rules.example.json 作参考）。',
-      '  把 Top 话题/标签拿给用户看并问他想怎么分，比空问「你想怎么分类」有效得多。',
+      '── 下一步：写你自己的 rules.json ──',
+      '  仓库只提供 rules.example.json 作语法参考。那份是按一份「游戏 + 二次元」偏重的收藏',
+      '  调出来的，直接套用多半不适合你。',
+      '',
+      '  照着上面这份画像，挑出你收藏里最重要的几个主题当作收藏夹 ——',
+      '  榜单前几名、或你明显想单独归成一类的那些。再照 README 的「分类规则」格式写 rules.json。',
+      '  （若你是在替别人跑：把上面的 Top 话题/标签拿给对方看，问他想怎么分。',
+      '    空问「你想怎么分类」，对方通常答不上来。）',
+      '',
       '  写好后：node xhh.mjs scan && node xhh.mjs plan',
     ].join('\n')
   );
@@ -367,6 +373,17 @@ function cmdPlan() {
     .map(([folder, links]) => ({ folder, count: links.length, sample: links.slice(0, 5), linkids: links.map((x) => x.linkid) }))
     .sort((a, b) => b.count - a.count);
 
+  // 适配度自检：让脚本单独使用时也能自己发现「这套规则不适合这份收藏」
+  const classified = folders.reduce((a, f) => a + f.count, 0);
+  const fitBase = classified + unassigned.length;
+  const biggest = folders[0];
+  const fitness = {
+    unassigned_pct: fitBase ? +((unassigned.length / fitBase) * 100).toFixed(1) : 0,
+    biggest_folder: biggest?.folder || null,
+    biggest_pct: fitBase && biggest ? +((biggest.count / fitBase) * 100).toFixed(1) : 0,
+  };
+  fitness.suspect = fitness.unassigned_pct > 30 || fitness.biggest_pct > 50;
+
   const plan = {
     created_at: new Date().toISOString(),
     total: d.items.length,
@@ -377,6 +394,7 @@ function cmdPlan() {
     folders,
     unassigned_count: unassigned.length,
     unassigned_sample: unassigned.slice(0, 15),
+    fitness,
   };
   writeJson(PLAN_FILE, plan);
 
@@ -408,30 +426,35 @@ function cmdPlan() {
   }
   console.log(`\n✓ 方案已写入 ${PLAN_FILE} 与 ${PLAN_MD}（未改动账号）`);
 
-  // 适配度自检：让 agent 能自己发现「这套规则不适合这个用户」，而不是等用户抱怨
-  const classified = folders.reduce((a, f) => a + f.count, 0);
-  const base = classified + plan.unassigned_count;
-  const unassignedPct = base ? (plan.unassigned_count / base) * 100 : 0;
-  const biggest = folders[0];
-  const biggestPct = base && biggest ? (biggest.count / base) * 100 : 0;
-
   console.log('\n── 规则适配度自检 ──');
-  console.log(`  未归类占比  ${unassignedPct.toFixed(1)}%   （>30% 说明规则没抓住这个用户的主要兴趣）`);
-  if (biggest) console.log(`  最大夹占比  ${biggestPct.toFixed(1)}%   「${biggest.folder}」  （>50% 说明分类过粗，建议拆开）`);
-
-  const warns = [];
-  if (unassignedPct > 30) warns.push(`未归类 ${unassignedPct.toFixed(0)}% 偏高`);
-  if (biggestPct > 50) warns.push(`「${biggest.folder}」独占 ${biggestPct.toFixed(0)}%`);
-
-  if (warns.length) {
-    console.log(`\n  ⚠ ${warns.join('；')}`);
-    console.log('    rules.json 多半不适合这个用户。**建议先别执行**，回去问用户想怎么分：');
-    console.log('    把 `node xhh.mjs stats` 里的 Top 话题/标签拿给他看，再据此改规则。');
-  } else {
-    console.log('  ✓ 看起来合理，可以进入人工审阅（看 data/plan.csv）');
+  console.log(`  未归类占比  ${fitness.unassigned_pct}%   （>30% 说明规则没抓住这份收藏的主要兴趣）`);
+  if (fitness.biggest_folder) {
+    console.log(`  最大夹占比  ${fitness.biggest_pct}%   「${fitness.biggest_folder}」  （>50% 说明分类过粗，建议拆开）`);
   }
 
-  console.log(`\n  预览无误后执行：node xhh.mjs apply --only <收藏夹名> --limit 20 --yes`);
+  if (fitness.suspect) {
+    const why = [];
+    if (fitness.unassigned_pct > 30) why.push(`未归类 ${fitness.unassigned_pct}% 偏高`);
+    if (fitness.biggest_pct > 50) why.push(`「${fitness.biggest_folder}」独占 ${fitness.biggest_pct}%`);
+    console.log(
+      [
+        '',
+        `  ⚠ ${why.join('；')} —— 这份 rules.json 多半不适合你的收藏。`,
+        '',
+        '    改法：先 `node xhh.mjs stats` 看清自己的 Top 话题 / 标签，',
+        '          照着它们重写 rules.json，再重新 plan。',
+        '    （如果你就是只想抽出其中某几类、其余留在默认夹，那这个比例是正常的，可继续。）',
+        '',
+        '    确认要按现状执行的话：',
+        '      node xhh.mjs apply --only <收藏夹名> --limit 20 --yes    ← 先小批量试跑',
+      ].join('\n')
+    );
+  } else {
+    console.log('');
+    console.log('  ✓ 看起来合理，可以进入人工审阅（看 data/plan.csv）');
+    console.log('');
+    console.log('  预览无误后执行：node xhh.mjs apply --only <收藏夹名> --limit 20 --yes');
+  }
 }
 
 // ------------------------------------------------------------------ 执行
@@ -516,6 +539,18 @@ async function cmdApply() {
   const totalPlanned = targets.reduce((a, f) => a + f.linkids.length, 0);
   console.log(`目标：${targets.length} 个收藏夹，计划移动 ${totalPlanned} 条`);
   console.log(`已完成（历史累计）：${Object.keys(state.moved).length} 条`);
+
+  // 把 plan 阶段的适配度结论带到这里。跳过 plan 输出、直接执行的人也得看见。
+  if (plan.fitness?.suspect) {
+    console.log(
+      [
+        '',
+        `  ⚠ 提醒：plan 的适配度自检判定这份 rules.json 可疑`,
+        `     （未归类 ${plan.fitness.unassigned_pct}%${plan.fitness.biggest_folder ? `，最大夹「${plan.fitness.biggest_folder}」占 ${plan.fitness.biggest_pct}%` : ''}）`,
+        '     如果你是有意只抽出某几类，可以继续；否则建议先改 rules.json 重跑 plan。',
+      ].join('\n')
+    );
+  }
 
   if (!exec) {
     for (const f of targets) {
