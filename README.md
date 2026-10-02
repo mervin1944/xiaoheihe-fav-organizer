@@ -1,5 +1,7 @@
 # xiaoheihe-fav-organizer
 
+[![赞赏](https://img.shields.io/badge/%E8%B5%9E%E8%B5%8F-%E7%88%B1%E5%8F%91%E7%94%B5-ff69b4)](https://afdian.com/a/mervin1944)
+
 > 把小黑盒（HeyBox）堆满的「默认收藏夹」按分类自动归入「收藏夹」的命令行工具。
 
 小黑盒的收藏夹管理是 **App 独占功能**：网页端和 PC 客户端都只能看平铺列表，而默认收藏夹有容量上限，
